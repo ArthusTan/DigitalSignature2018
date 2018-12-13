@@ -8,126 +8,103 @@ import java.net.Socket;
 import Algorithm.Algor;
 
 public class Client{
+	private static int    KPORT = 8888;
+	private static int    SPORT = 7777;
 	private static String KIP = "127.0.0.1";
 	private static String SIP = "127.0.0.1";
-	private static int KPORT = 8888;
-	private static int SPORT = 7777;
-	private static String TGT = ",,";
-	private static String userName = "";
-	private static String password = "";
 	private static String sessionKey = "";
+	private static String TGT = "";
 	private static String ticket = "";
-	
+	private static String webName = "";
+	private static String userName = "";
+	private static String password = ""; // Plan to use MD5 in the future version.
+										 // Input a real-password and get its Hash-value(MD5).
+										 // Compare with the Hash-value in database of K_Server. 
+
 	private static String sendMsg (Socket socket,
 								   PrintWriter pWriter,
 								   BufferedReader bReader,
-								   String message){//Send message to Server
-		pWriter.println(message);
+								   String message){// Send [message] to Server
+		pWriter.println(message);// Send [message]
 		pWriter.flush();
 		System.out.println("\tClient            : " + message);
-		
 		String response = "";
         try {
-			response = bReader.readLine();
-		} catch (Exception e) { System.out.println("cannot listen to the server."); }
-        
-		return new String(Algor.decipher(response, password));
+			response = bReader.readLine();// Get Response[Encrypted]
+		} catch (Exception e) {
+			System.out.println("cannot listen to the server.");
+		}
+		return new String(Algor.decipher(response, password));// Return Response[Deciphered]
 	}
-	
 	public static void main(String[] args){
         try {
-        	//建立连接
-            Socket socket = new Socket(KIP,KPORT);
+            Socket socket = new Socket(KIP,KPORT);//Listen to K_Server
             System.out.println("--- CLIENT ---");
-            
             BufferedReader inputer = new BufferedReader(new InputStreamReader(System.in));
             PrintWriter    pWriter = new PrintWriter(socket.getOutputStream());
 	        BufferedReader bReader = new BufferedReader(
 	        		new InputStreamReader(socket.getInputStream()));
 	        
-            //---login---
+	        //---login---
 	        System.out.print("USERNAME : ");
-            userName = inputer.readLine();
+	        userName = inputer.readLine(); // Get UserName
             System.out.print("PASSWORD : ");
-            password = inputer.readLine();
-            
-            String message = "login," + userName + "," + password;
+            password = inputer.readLine(); // Get Password (Plan to use MD5 in the future version)
+            String message = "login," + userName + "," + password; // Send Login Order(Ask TGT)
             message = sendMsg(socket,
             				  pWriter,
 					  		  bReader,
-					  		  message);//response
-            System.out.println("\tAServer[DECIPHER] : " + message);
+					  		  message);// Get Login Response (TGT)
+            TGT = message; // Get Ticket-Granting Ticket
+            System.out.println("\tAServer[DECIPHER] : (TGT) : " + message);
             
-            //---login successful---
+            //---login successful, ask ticket---
             if(!message.equals("[QUIT] Warn username or password.")){
+            	
             	//---visit---
 	            System.out.print("VISIT    : ");
-            	message = inputer.readLine();//target
-            	message = "visit," + userName + "," + message;
+            	webName = inputer.readLine(); // Get Name[Web Server]
+            								  // Here we use user_00 for default web server.
+            								  // If not, please change the value in web server(WebServer.java).
+            	message = "visit,and," + webName + ",and," + TGT; 
             	System.out.println("\tClient[DECIPHER]  : " + message);
             	message = sendMsg(socket,
       				  			  pWriter,
       				  			  bReader,
-      				  			  new String(Algor.encrypt(message,password)));//response
-            	TGT = message;
-            	System.out.println("\tAServer[DECIPHER] : (TGT)    : " + message);
-            	System.out.println();
+      				  			  new String(Algor.encrypt(message,password))); // Ask Ticket (with TGT)
+            	System.out.println("\tTGServer[DECIPHER]: (Ticket, SK) : " + message);
+            	sessionKey = message.split(",and,")[1]; // Get Session Key
+            	ticket = message.split(",and,")[0];		// Get Ticket
+            	System.out.println("[SESSION KEY] = " + sessionKey); // Show Session Key
+            	System.out.println("[TICKET]      = " + ticket); 	 // Show Ticket
             	
-            	//---allow to visit---
-            	if(!message.equals("[QUIT] Donot have enough power to visit it.")){
+            	//---ticket is legal---
+            	if(!ticket.equals("[QUIT] TGT is illegal.")){
+            		System.out.println("\n--- BEGIN TO VISIT WEB SERVER---");
             		
-            		//---ask for ticket---
-            		message = "askTicket,"+TGT;
-            		System.out.println("\tClient[DECIPHER]  : " + message);
-                	message = sendMsg(socket,
-            						  pWriter,
-            						  bReader,
-            						  new String(Algor.encrypt(message, password)));//response
-            		System.out.println("\tTGServer[DECIPHER]: (Ticket) : " + message);
-            		sessionKey = message.split(",and,")[1];
-            		System.out.println("[SESSION KEY] = " + sessionKey);
-            		ticket = message.split(",")[0];
-            		System.out.println("[TICKET]      = " + ticket);
-            		
-            		//---ticket isn't illegal---
-            		if(!ticket.equals("[QUIT] TGT is illegal.")){
-            			
-            			System.out.println();
-            			System.out.println("--- BEGIN TO VISIT WEB SERVER---");
-            			
-            			//---visit Web Server---
-            			Socket webSocket = new Socket(SIP, SPORT);
-            			
-            			System.out.println("--- TRYING TO CONNECT WEB SERVER ---");
-                        
-                        //BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
-                        
-                        PrintWriter    pw = new PrintWriter(webSocket.getOutputStream());
-            	        BufferedReader br = new BufferedReader(
-            	        		new InputStreamReader(webSocket.getInputStream()));
-            	        
-            	        String response = null;
-            	        response = new String(Algor.encrypt(sendMsg(webSocket,
-            	        										  pw,
-            	        										  br,
-            	        										  ticket),password));
-            	        if(!response.equals("[QUIT] WRONG TICKET")){
-	            	        response = new String(Algor.decipher(response, sessionKey));
-	            	        
-	            	        System.out.println("FROM WEB SERVER           : " + response);
-	            	        
-	            	        System.out.println("--- BEGIN TO VISIT ---");
-	            			while(true){
-	            				;
-	            				/*
-	    		            	 * BEGGIN TO VISIT THE RESOURCE LEGALLY
-	    		            	 */
-	            			}
-            			}
-	            	}
-            	}
+            		//---visit Web Server---
+            		Socket webSocket = new Socket(SIP, SPORT); // Listen to Web Server
+            		System.out.println("--- TRYING TO CONNECT WEB SERVER ---");
+                    PrintWriter    pw = new PrintWriter(webSocket.getOutputStream());
+            	    BufferedReader br = new BufferedReader(
+            	    		new InputStreamReader(webSocket.getInputStream()));
+            	    String response = new String(Algor.encrypt(sendMsg(webSocket,
+            	    										  		   pw,
+            	       										  		   br,
+            	       										  		   ticket), // Send Ticket
+            	       							 password)); // Ask Allowance[Encrypted by Session Key]
+            	    if(!response.equals("[QUIT] WRONG TICKET")){
+	                    response = new String(Algor.decipher(response, sessionKey));   // Get Allowance
+	           	        System.out.println("FROM WEB SERVER           : " + response);
+	                    System.out.println("--- BEGIN TO VISIT ---");
+	            		while(true){;
+	           				/**
+	    	            	 * BEGGIN TO VISIT WEB SERVER
+	    	            	 **/
+	           			}
+            		}
+	            }
             }
-            
             pWriter.close();
             bReader.close();
             socket.close();

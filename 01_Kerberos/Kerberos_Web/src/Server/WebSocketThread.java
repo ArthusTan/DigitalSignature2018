@@ -7,16 +7,17 @@ import java.net.Socket;
 
 import Algorithm.Algor;
 
-public class WebSocketThread extends Thread{
+public class WebSocketThread extends Thread{ // Reuse SocketThread.java
 	private Socket socket = null;
 	private String target = "";
-	private static String password = "0000000";
 	private static String sessionKey = "";
-	@SuppressWarnings("unused")
-	private static String userName = "user_00";
+	private static String password = "";
+	private static String userName = "";
 	
-	public WebSocketThread(Socket socket){
+	public WebSocketThread(Socket socket, String un, String pw){
 		this.socket = socket;
+		userName = un;
+		password = pw;
 		this.target = socket.getInetAddress().getHostAddress() + ":" + socket.getPort();
 	}
 	
@@ -26,20 +27,18 @@ public class WebSocketThread extends Thread{
 									String target){//Receive message, then analysis it.
 		String message = "";
 		boolean flag = true;
-		
 		try {
 			message = bReader.readLine();
 			System.out.println("Client  : " + message);
 		} catch (Exception e) { return false; }
-        
-		String response = "get message from " + target;///normal response
+		String response = "get message from " + target; // Default Response (Never gonna happen)
 		
-		////---begin to analysis : different functions (后期可函数化)---
+	////---begin to analysis the message---
 		
 		response = new String(Algor.decipher(message, password));
 		System.out.println("[TICKET],SK   = " + response);
 		String[] array = response.split(",");
-		if(array[0].equals("[TICKET]")){
+		if(array[0].equals("[ALLOW]")){
 			sessionKey = array[3];
 			System.out.println("[SESSION KEY] = " + sessionKey);
 			response = new String(Algor.encrypt(response, sessionKey));
@@ -47,13 +46,14 @@ public class WebSocketThread extends Thread{
 		else{
 			response = new String("[QUIT] WRONG TICKET");
 		}
-		////---end analysis---
+	////---end of analysis---
 
+		//---send message (response) to client---
         System.out.println("Server  : "+response);
         System.out.println();
+        
         pWriter.println(response);
         pWriter.flush();
-        
         return flag;
 	}
 	
@@ -72,7 +72,7 @@ public class WebSocketThread extends Thread{
             socket.close();
         }catch(Exception e) {e.printStackTrace();;}
         finally{
-            System.out.println("[QUIT] cannot find socket[ 'target' = '" + target+"' ]\n\n\n\n\n");
+            System.out.println("[QUIT] cannot find " + userName + "{socket[ 'target' = '" + target+"' ]}\n\n\n\n\n");
         }
     }
 }

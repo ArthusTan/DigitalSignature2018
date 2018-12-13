@@ -13,9 +13,8 @@ public class SocketThread extends Thread{
 	private Socket socket = null;
 	private String target = "";
 	private static String webKey = "";
-	private static String ServerKey = "";
+	private static String ServerKey = "kerberos";// AS_Key & TGS_Key
 	private static String password = "";
-	@SuppressWarnings("unused")
 	private static String userName = "";
 	
 	public SocketThread(Socket socket){
@@ -29,26 +28,26 @@ public class SocketThread extends Thread{
 									String target){//Receive message, then analysis it.
 		String message = "";
 		boolean flag = true;
-		
 		try {
 			message = bReader.readLine();
 			System.out.println("Client[RECI]           : " + message);
 		} catch (Exception e) { return false; }
-        
-		String response = "get message from " + target;///normal response
+		String response = "get message from " + target; // Default Response (Never gonna happen)
 		
-		////---begin to analysis : different functions (后期可函数化)---
+	////---begin to analysis the message---
 		
 		//---login---
 		if(message.startsWith("login")){
 			System.out.println("\t>>> LOGIN   <<<");
-			if(AServer.confirm(message, 1, 1) >= 0){
+			String[] array = message.split(",");
+			userName = array[1];
+			password = array[2];
+			if(AServer.confirm(message)){
 				System.out.println("\t>>> SUCCESS <<<");
-				String[] array = message.split(",");
-				userName = array[1];
-				password = array[2];
-				
-				response = "Login successful.";
+				response = "[AUTH]," + userName;	// Ticket-Granting Ticket
+				System.out.println("(TGT) : " + response);
+				response = new String(Algor.encrypt(response, ServerKey));
+				System.out.println("(TGT) : " + response);
 			}
 			else{
 				System.out.println("\t>>> FAILED  <<<");
@@ -59,64 +58,50 @@ public class SocketThread extends Thread{
 		else{
 			
 			//---get real message---
-			
 			message = new String(Algor.decipher(message, password));
 			System.out.println("Client[RECI][DECIPHER] : " + message);
 			
 			//---visit---
 			if(message.startsWith("visit")){
 				System.out.println("\t>>> VISIT   <<<");
-				if(AServer.visit(message)){
+				String[] array = message.split(",and,");
+				String webName = array[1];
+				String TGT = new String(Algor.decipher(array[2], ServerKey));
+				System.out.println("\t>>> GET Ticket-Granting Ticket : " + TGT);
+				
+				String ticket = TGServer.confirm(webName,TGT);
+				if(!ticket.equals("[NOTALLOW]")){
 					//---get webKey---
-					webKey = AServer.visitKey(message);
-					System.out.println("\t>>> GET WEBKEY : "+webKey);
+					webKey = AServer.visitKey(webName);
+					System.out.println("\t>>> GET WEBKEY : " + webKey);
 					System.out.println("\t>>> SUCCESS <<<");
-					String[] array = message.split(",");
-					String TGT = "[ALLOW],"+array[1]+","+array[2];
-					//response = "[ALLOW]," + new String(Algor.encrypt(TGT, ServerKey));
-					response = new String(Algor.encrypt(TGT, ServerKey));
+					
+					//---send ticket
+					System.out.println("\t>>> TICKET : " + ticket);
+					String sessionKey = ticket.split(",")[3];
+					
+					//---use webKey to encrypt---
+					response = new String(Algor.encrypt(ticket, webKey)) + ",and," + sessionKey;
+						
 				}
 				else{
 					System.out.println("\t>>> FAILED  <<<");
-					response = "[QUIT] Donot have enough power to visit it.";
+					response = "[QUIT] cannot visit it.";
 					flag = false;
 				}
 			}
-			else{
-			
-				//---ask ticket
-				if(message.startsWith("askTicket")){
-					System.out.println("\t>>> TICKET  <<<");
-					String TGT = message.substring("askTicket,".length(), message.length());
-					System.out.println("TGT     >>> " + TGT);
-					TGT = new String(Algor.decipher(TGT, ServerKey));
-					System.out.println("TGT     >>> " + TGT);
-					String ticket = TGServer.getTicket(TGT);
-					
-					if(ticket.startsWith("[ALLOW]")){
-						System.out.println("\t>>> SUCCESS <<<");
-						response = ticket.replaceFirst("ALLOW", "TICKET") + "," + "[SESSION KEY]" + "," + "[TIMESTAMP]";
-						System.out.println("[Ticket] >>> " + response);
-						//---use webKey to encrypt---
-						response = new String(Algor.encrypt(response, webKey)) + ",and," + "[SESSION KEY]";
-					}
-					else{
-						System.out.println("\t>>> FAILED  <<<");
-						response = "[QUIT] TGT is illegal.";
-						flag = false;
-					}
-				}
-			}
 		}
-		////---end analysis---
+	////---end of analysis---
 
+		//---send message (response) to client---
         System.out.println("Server[SEND]           : "+response);
+        
         response = new String(Algor.encrypt(response, password));
         System.out.println("Server[SEND][ENCRYPT]  : "+response);
         System.out.println();
+        
         pWriter.println(response);
         pWriter.flush();
-        
         return flag;
 	}
 	
@@ -133,7 +118,7 @@ public class SocketThread extends Thread{
             pWriter.close();
             bReader.close();
             socket.close();
-        }catch(Exception e) {e.printStackTrace();;}
+        }catch(Exception e) {e.printStackTrace();}
         finally{
             System.out.println("[QUIT] cannot find socket[ 'target' = '" + target+"' ]\n\n\n\n\n");
         }
